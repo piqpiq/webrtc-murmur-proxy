@@ -153,7 +153,7 @@ const beforeOffer = peerConnection => {
   let rawDataBuffer = new Uint16Array(480 * 5)
   let rawDataBufferOffset = 0
 
-  peerConnection.audioSink = new RTCAudioSink(peerConnection.addTransceiver('audio', ).receiver.track).ondata = data => {
+  peerConnection.audioSink = new RTCAudioSink(peerConnection.addTransceiver('audio', {direction: "recvonly"}).receiver.track).ondata = data => {
     if (data.samples.length > 480) {
       throw new Error("Too many samples in packet: " + data.samples.length)
     }
