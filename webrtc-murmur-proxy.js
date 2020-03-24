@@ -214,7 +214,7 @@ const beforeOffer = peerConnection => {
   }))
 
   murmurSocket.on("data", data => {
-    if (peerConnection.dataChannel) {
+    if (peerConnection.dataChannel && (peerConnection.dataChannel.readyState === "open")) {
       peerConnection.dataChannel.send(data)
     } else {
       console.log("dataChannel NOT YET OPEN")
