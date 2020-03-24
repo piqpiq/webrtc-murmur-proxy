@@ -1,7 +1,7 @@
 "use strict"
 
 import http from "http"
-import textBody from "body"
+import jsonBody from "body/json"
 import tls from "tls"
 import net from "net"
 import { nonstandard } from "wrtc"
@@ -14,7 +14,7 @@ const murmurHost = "default.mumble.prod.hearo.live"
 const murmurPort = 64738
 const webRtcPort = 8136
 
-console.log("Starting mummur-proxy")
+console.log("Starting webrtc-mummur-proxy")
 
 process.on('uncaughtException', function (exception) {
   console.log(exception);
@@ -83,21 +83,23 @@ http.createServer({}, (req, res) => {
           const connection = getConnection(connectionId);
           if (!connection) {
             res.writeHead(404);
+            res.end()
           } else {
             try {
-              textBody(req, (err, body) => {
-                connection.applyAnswer(JSON.parse(body))
+              jsonBody(req, (err, body) => {
+                connection.onDescriptionReceived(body)
                   .then(() => {
-                    res.end(JSON.stringify(connection.remoteDescription));
+                    res.setHeader("Content-Type","application/json")
+                    res.end(JSON.stringify(connection.localDescription))
+                    return
                   })
               })
-              return
             } catch (error) {
               console.log("Error:", error)
               res.writeHead(400);
+              res.end()
             }
           }
-          res.end()
           return
         }
       }

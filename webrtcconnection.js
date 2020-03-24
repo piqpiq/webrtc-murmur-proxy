@@ -58,8 +58,12 @@ export default class WebRtcConnection extends EventEmitter {
       }
     };
 
-    this.applyAnswer = async answer => {
-      await peerConnection.setRemoteDescription(answer);
+    this.onDescriptionReceived = async description => {
+      await peerConnection.setRemoteDescription(description);
+      if (peerConnection.signalingState === "have-remote-offer") {          //New negotitiaion
+        const answer = await peerConnection.createAnswer()
+        await peerConnection.setLocalDescription(answer)
+      }
     };
 
     this.close = () => {
