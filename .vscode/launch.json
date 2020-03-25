@@ -12,7 +12,8 @@
         "<node_internals>/**"
       ],
       "program": "${workspaceFolder}\\webrtc-murmur-proxy.js",
-      "runtimeArgs": ["-r", "esm"]
+      "runtimeArgs": ["-r", "esm"],
+      "args": ["log"]
     }
   ]
 }

@@ -17,6 +17,8 @@ export default class WebRtcConnection extends EventEmitter {
       sdpSemantics: 'unified-plan'
     });
 
+    peerConnection.id = this.id
+
     beforeOffer(peerConnection);
 
     let connectionTimer = setTimeout(() => {

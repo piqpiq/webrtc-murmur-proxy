@@ -14,6 +14,17 @@ const murmurHost = "default.mumble.prod.hearo.live"
 const murmurPort = 64738
 const webRtcPort = 8136
 
+var logging = false
+
+const args = process.argv.slice(2)
+if (args[0] === "log") {
+  console.log("Logging enabled")
+  logging = true
+} else if (args.length) {
+  console.log("Unknown argument(s):", ...args)
+  process.exit()
+}
+
 console.log("Starting webrtc-mummur-proxy")
 
 process.on('uncaughtException', function (exception) {
@@ -64,12 +75,14 @@ http.createServer({}, (req, res) => {
     case "POST":
       if (req.url === "/connections") {
         try {
-          const connection = createConnection(beforeOffer)
-          connection.doOffer()
-            .then(() => {
-              res.end(JSON.stringify(connection))
-              //console.log(`WebRTC connection from ${req.connection.remoteAddress}:${req.connection.remotePort}: ${connection.id}`)
-            })
+          const murmurSocket = new tls.TLSSocket(net.createConnection(murmurPort, murmurHost, () => {
+            murmurSocket.connected = true
+            const connection = createConnection(peerConnection => setupPeerConnection(peerConnection, murmurSocket))
+            connection.doOffer()
+              .then(() => {
+                res.end(JSON.stringify(connection))
+              })
+          }))
         } catch (error) {
           console.log("POST error")
           console.error(error);
@@ -147,15 +160,96 @@ const getConnectionId = (req, regex) => {
 
 const positionDataBytes = new Uint8Array(new Float32Array([0.0, 0.0, 0.0]))
 
-const beforeOffer = peerConnection => {
-  peerConnection.packetCount = 0
-  //console.log("got peerConnection") //, peerConnection)
-  const opusEncoder = new opus.OpusEncoder(48000, 1)
+const setupPeerConnection = (peerConnection, murmurSocket) => {
 
+  const log = (msg, ...args) => {
+    if (logging) {
+      console.log(`[${peerConnection.id.substring(0, 8)}]`, msg, ...args)
+    }
+  }
+
+  //
+  // Create connections
+  //
+
+  const audioSink = new RTCAudioSink(peerConnection.addTransceiver('audio', {direction: "recvonly"}).receiver.track)
+
+  peerConnection.dataChannel = peerConnection.createDataChannel("dataChannel")
+  peerConnection.dataChannel.onopen = () => {
+    log("dataChannel open")
+  }
+
+  //
+  // Shutdown
+  //
+
+  let shuttingDown = false
+  const shutdown = () => {
+    if (!shuttingDown) {
+      shuttingDown = true
+      log("shutdown")
+      const connection = getConnection(peerConnection.id)
+      if (connection) {
+        log("closing")
+        connection.close()
+      }
+    }
+  }
+
+  //
+  // Handle disconnections & errors
+  //
+
+  murmurSocket.on("end", () => {
+    log("murmurSocket end"); 
+    murmurSocket.connected = false
+    shutdown()
+  })
+
+  murmurSocket.on("error", err => {
+    log("Error on Murmur socket:", err);
+  });
+
+  peerConnection.onconnectionstatechange = () => {
+    log("peerConnection", peerConnection.connectionState)
+    if ((peerConnection.connectionState === "disconnected") || (peerConnection.connectionState === "failed")) {
+      shutdown()
+    }
+  }
+
+  peerConnection.dataChannel.onclose = shutdown
+
+  peerConnection.dataChannel.onerror = err => {
+    log("dataChannel error:", err)
+  }
+ 
+  //
+  // Handle incoming data
+  //
+
+  murmurSocket.on("data", data => {
+    if (peerConnection.dataChannel.readyState === "open") {
+      peerConnection.dataChannel.send(data)
+    }
+  })
+
+  peerConnection.dataChannel.onmessage = evt => {
+    if (murmurSocket.connected) {
+      murmurSocket.write(Buffer.from(evt.data))
+    }
+  }
+
+  //For encoding and sending audio data
+  const opusEncoder = new opus.OpusEncoder(48000, 1)
   let rawDataBuffer = new Uint16Array(480 * 5)
   let rawDataBufferOffset = 0
+  peerConnection.packetCount = 0
 
-  peerConnection.audioSink = new RTCAudioSink(peerConnection.addTransceiver('audio', {direction: "recvonly"}).receiver.track).ondata = data => {
+  audioSink.ondata = data => {
+    if (!murmurSocket.connected) {
+      return
+    }
+
     if (data.samples.length > 480) {
       throw new Error("Too many samples in packet: " + data.samples.length)
     }
@@ -164,7 +258,7 @@ const beforeOffer = peerConnection => {
     rawDataBufferOffset += data.samples.length
 
     if (rawDataBufferOffset > 1920) {
-      console.log("discarding", rawDataBufferOffset)
+      log("discarding", rawDataBufferOffset)
       rawDataBufferOffset = 0
     }
 
@@ -207,51 +301,11 @@ const beforeOffer = peerConnection => {
     }
     peerConnection.packetCount += 1
   }
-
-  //Create connection to Murmur server
-  const murmurSocket = new tls.TLSSocket(net.createConnection(murmurPort, murmurHost, () => {
-    //console.log(`Connected to ${murmurHost}:${murmurPort}`)
-  }))
-
-  murmurSocket.on("data", data => {
-    if (peerConnection.dataChannel && (peerConnection.dataChannel.readyState === "open")) {
-      peerConnection.dataChannel.send(data)
-    } else {
-      console.log("dataChannel NOT YET OPEN")
-    }
-  })
-
-  const shutdown = () => {
-    peerConnection.audioSink.ondata = null
-    const connection = getConnection(peerConnection.id)
-    if (connection) {
-      connection.close()
-    }
-    peerConnection.close()
-  }
-
-  murmurSocket.on("end", shutdown)
-
-  murmurSocket.on("error", err => {
-    console.log("Error on Murmur socket:", err);
-    murmurSocket.end();
-  });
-
-  peerConnection.onconnectionstatechange = () => {
-    //console.log("PeerConnection new connectionState:", peerConnection.connectionState)
-    if ((peerConnection.connectionState === "disconnected") || (peerConnection.connectionState === "failed")) {
-      shutdown()
-    }
-  }
-
-  peerConnection.dataChannel = peerConnection.createDataChannel("dataChannel");
-  //peerConnection.dataChannel.onopen = () => console.log("dataChannel open")
-  peerConnection.dataChannel.onclose = shutdown
-  peerConnection.dataChannel.onerror = err => console.log("dataChannel error:", err)
-  peerConnection.dataChannel.onmessage = evt => {
-    murmurSocket.write(Buffer.from(evt.data))
-  }
 }
+
+//
+// Utility functions
+//
 
 function writeIntToByteArray(int, intLength, byteArray, offset) {
   for (let i = intLength; i > 0;) {
@@ -270,6 +324,7 @@ function writeInt16ToByteArray(int, byteArray, offset) {
   return writeIntToByteArray(int, 2, byteArray, offset)
 }
 
+//Returns number of bytes written. If byteArray not specified, return just the byte count.
 function writeVarintToByteArray(int, byteArray, offset) {
 
   if (int < 128) {
