@@ -217,6 +217,10 @@ const setupPeerConnection = (peerConnection, murmurSocket) => {
     }
   }
 
+  peerConnection.onnegotiationneeded = () => {
+    log("peerConnection negotiationneed")
+  }
+  
   peerConnection.dataChannel.onclose = shutdown
 
   peerConnection.dataChannel.onerror = err => {
