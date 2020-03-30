@@ -1,162 +1,126 @@
 'use strict';
 
-const EventEmitter = require('events');
 const RTCPeerConnection = require('wrtc').RTCPeerConnection;
 
 const TIME_TO_CONNECTED = 20000;
-const TIME_TO_HOST_CANDIDATES = 3000;
 const TIME_TO_RECONNECTED = 20000;
 
-export default class WebRtcConnection extends EventEmitter {
-  constructor(id, beforeOffer) {
-    super()
-    this.id = id;
-    this.state = 'open';
+export default function EstablishPeerConnection(signalingSocket, log, beforeOffer) {
+  let timeoutTimer
 
-    const peerConnection = new RTCPeerConnection({
-      sdpSemantics: 'unified-plan'
-    });
+  const close = () => {
+    if (timeoutTimer) {
+      clearTimeout(timeoutTimer)
+    }
+    peerConnection.close()
+  }
 
-    peerConnection.id = this.id
-
-    beforeOffer(peerConnection);
-
-    let connectionTimer = setTimeout(() => {
+  const doSetTimeout = time => {
+    timeoutTimer = setTimeout(() => {
       if ((peerConnection.iceConnectionState !== 'connected') && (peerConnection.iceConnectionState !== 'completed')) {
-        this.close();
+        close()
       }
-    }, TIME_TO_CONNECTED);
-
-    let reconnectionTimer = null;
-
-    const onIceConnectionStateChange = () => {
-      if ((peerConnection.iceConnectionState === 'connected') || (peerConnection.iceConnectionState === 'completed')) {
-        if (connectionTimer) {
-          clearTimeout(connectionTimer);
-          connectionTimer = null;
-        }
-        clearTimeout(reconnectionTimer);
-        reconnectionTimer = null;
-      } else if ((peerConnection.iceConnectionState === 'disconnected') || (peerConnection.iceConnectionState === 'failed')) {
-        if (!connectionTimer && !reconnectionTimer) {
-          const self = this;
-          reconnectionTimer = setTimeout(() => {
-            self.close();
-          }, TIME_TO_RECONNECTED);
-        }
-      }
-    };
-
-    peerConnection.addEventListener('iceconnectionstatechange', onIceConnectionStateChange);
-
-    this.doOffer = async () => {
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      try {
-        await waitUntilIceGatheringStateComplete(peerConnection);
-      } catch (error) {
-        this.close();
-        throw error;
-      }
-    };
-
-    this.onDescriptionReceived = async description => {
-      await peerConnection.setRemoteDescription(description);
-      if (peerConnection.signalingState === "have-remote-offer") {          //New negotitiaion
-        const answer = await peerConnection.createAnswer()
-        await peerConnection.setLocalDescription(answer)
-      }
-    };
-
-    this.close = () => {
-      peerConnection.removeEventListener('iceconnectionstatechange', onIceConnectionStateChange);
-      if (connectionTimer) {
-        clearTimeout(connectionTimer);
-        connectionTimer = null;
-      }
-      if (reconnectionTimer) {
-        clearTimeout(reconnectionTimer);
-        reconnectionTimer = null;
-      }
-      peerConnection.close();
-      this.state = 'closed';
-      this.emit('closed');
-    };
-
-    this.toJSON = () => {
-      return {
-        id: this.id,
-        state: this.state,
-        iceConnectionState: this.iceConnectionState,
-        localDescription: this.localDescription,
-        remoteDescription: this.remoteDescription,
-        signalingState: this.signalingState
-      };
-    };
-
-    Object.defineProperties(this, {
-      iceConnectionState: {
-        get() {
-          return peerConnection.iceConnectionState;
-        }
-      },
-      localDescription: {
-        get() {
-          return descriptionToJSON(peerConnection.localDescription, true);
-        }
-      },
-      remoteDescription: {
-        get() {
-          return descriptionToJSON(peerConnection.remoteDescription);
-        }
-      },
-      signalingState: {
-        get() {
-          return peerConnection.signalingState;
-        }
-      }
-    });
-  }
-}
-
-function descriptionToJSON(description, shouldDisableTrickleIce) {
-  return !description ? {} : {
-    type: description.type,
-    sdp: shouldDisableTrickleIce ? disableTrickleIce(description.sdp) : description.sdp
-  };
-}
-
-function disableTrickleIce(sdp) {
-  return sdp.replace(/\r\na=ice-options:trickle/g, '');
-}
-
-async function waitUntilIceGatheringStateComplete(peerConnection) {
-  if (peerConnection.iceGatheringState === 'complete') {
-    return;
+    }, time)
   }
 
-  const deferred = {};
-  deferred.promise = new Promise((resolve, reject) => {
-    deferred.resolve = resolve;
-    deferred.reject = reject;
+  const peerConnection = new RTCPeerConnection({
+    sdpSemantics: "unified-plan",
+    iceServers: [
+      {
+        'urls': 'stun:stun.l.google.com:19302'
+      },
+    ]
   });
 
-  const timeout = setTimeout(() => {
-    console.log("timeToHostCandidates timeout")
-    console.log("iceGatheringState:", peerConnection.iceGatheringState)
-    peerConnection.removeEventListener('icecandidate', onIceCandidate);
-    deferred.reject(new Error('Timed out waiting for host candidates'));
-  }, TIME_TO_HOST_CANDIDATES);
-
-  function onIceCandidate({ candidate }) {
-    if (!candidate) {
-      clearTimeout(timeout);
-      peerConnection.removeEventListener('icecandidate', onIceCandidate);
-      deferred.resolve();
+  peerConnection.oniceconnectionstatechange = () => {
+    log("iceConnectionState", peerConnection.iceConnectionState)
+    if ((peerConnection.iceConnectionState === 'disconnected') || (peerConnection.iceConnectionState === 'failed')) {
+      doSetTimeout(TIME_TO_RECONNECTED)
     }
   }
 
-  peerConnection.addEventListener('icecandidate', onIceCandidate);
+  peerConnection.onconnectionstatechange = () => {
+    log("connectionState", peerConnection.connectionState)
+    if ((peerConnection.connectionState === "disconnected") || (peerConnection.connectionState === "failed")) {
+      close()
+    }
+  }
 
-  await deferred.promise;
+  peerConnection.onicegatheringstatechange = () => {
+    log("iceGatheringState:", peerConnection.iceGatheringState)
+  }
+
+  peerConnection.onsignalingstatechange = () => {
+    log("signalingState:", peerConnection.signalingState)
+  }
+
+  peerConnection.onnegotiationneeded = () => {
+    log("onnegotiationneeded")
+  }
+
+  peerConnection.onicecandidate = evt => {
+    if (evt.candidate && evt.candidate.candidate) {
+      log("on icecandidate")  //, evt.candidate.candidate)
+      signalingSocket.sendJson({
+        type: "ice",
+        ice: {
+          candidate: evt.candidate.candidate,
+          sdpMid: evt.candidate.sdpMid,
+          sdpMLineIndex: evt.candidate.sdpMLineIndex
+        }
+      })
+    }
+  }
+
+  beforeOffer(peerConnection)
+
+  doSetTimeout(TIME_TO_CONNECTED)
+
+  peerConnection.createOffer()
+    .then(offer => peerConnection.setLocalDescription(offer))
+    .then(() => signalingSocket.sendJson({
+      type: "offer",
+      offer: peerConnection.localDescription
+    }))
+
+  signalingSocket.on("message", msg => {
+    const json = JSON.parse(msg)
+
+    switch (json.type) {
+
+      case "answer":
+        log("answer received")
+        peerConnection.setRemoteDescription(json.answer)
+        break
+
+      case "offer":
+        log("offer received")
+        peerConnection.setRemoteDescription(json.offer)
+          .then(() => peerConnection.createAnswer())
+          .then(answer => {
+            peerConnection.setLocalDescription(answer)
+              .then(() => {
+                signalingSocket.sendJson({type: "answer", answer: answer})  //Should be able to send localDescription except for Firefox bug
+              })
+          })
+        break;
+
+      case "ice":
+        log("adding iceCandidate")
+        if (json.ice.candidate) {
+          peerConnection.addIceCandidate(json.ice)
+        }
+        break
+
+      case "close":
+        log("closing peerConnection")
+        close()
+        break
+
+      default:
+        log("Unhandled signaling message type:", json.type)
+    }
+  })
+
+  return peerConnection;
 }

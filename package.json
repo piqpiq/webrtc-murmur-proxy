@@ -4,15 +4,15 @@
   "description": "Proxy for Hearo web client to communicate with Murmur server via WebRTC PeerConnection",
   "main": "webrtc-murmur-proxy.js",
   "scripts": {
-    "test": "node -r esm proxy"
+    "test": "node -r esm webrtc-murmur-proxy log"
   },
   "author": "Matt Toschlog, Hearo.Live",
   "dependencies": {
     "@discordjs/opus": "^0.1.0",
     "body": "^5.1.0",
     "esm": "^3.2.25",
-    "uuid": "^7.0.2",
-    "wrtc": "^0.4.4"
+    "wrtc": "^0.4.4",
+    "ws": "^7.2.3"
   },
   "engines": {
     "npm": "6.10.2",
