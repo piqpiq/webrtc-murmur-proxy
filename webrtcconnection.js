@@ -112,6 +112,13 @@ export default function EstablishPeerConnection(signalingSocket, log, beforeOffe
         }
         break
 
+      case "ready":
+        log("client ready")
+        if (peerConnection.onClientReady) {
+          peerConnection.onClientReady()
+        }
+        break
+
       case "close":
         log("closing peerConnection")
         close()

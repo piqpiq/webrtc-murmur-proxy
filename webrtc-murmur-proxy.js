@@ -46,35 +46,31 @@ const wsServer = new WebSocket.Server({port: webRtcPort});
 console.log("WebSocket listening on port", webRtcPort)
 
 wsServer.on("connection", webSocket => {
-  let murmurSocket
+  let clientReady = false
+  let murmurSocket = null
+  let dataChannel = null
 
-  // const murmurSocket = new tls.TLSSocket(net.createConnection(murmurPort, murmurHost, () => {
-  //   murmurSocket.connected = true
-  {
-    webSocket.sendJson = obj => webSocket.send(JSON.stringify(obj))
+  webSocket.sendJson = obj => webSocket.send(JSON.stringify(obj))
 
-    const id = generateId()
-    const log = (msg, ...args) => {
-      if (logging) {
-        console.log(`[${id}]`, msg, ...args)
-      }
+  const id = generateId()
+  const log = (msg, ...args) => {
+    if (logging) {
+      console.log(`[${id}]`, msg, ...args)
     }
-    
-    EstablishPeerConnection(webSocket, log, peerConnection => {
-    
-      //
-      // Create connections
-      //
-    
-      const audioSink = new RTCAudioSink(peerConnection.addTransceiver('audio', {direction: "recvonly"}).receiver.track)
-    
-      peerConnection.dataChannel = peerConnection.createDataChannel("dataChannel")
-      peerConnection.dataChannel.onopen = () => {
-        log("dataChannel open")
+  }
+  
+  EstablishPeerConnection(webSocket, log, peerConnection => {
 
+    peerConnection.onClientReady = () => {
+      clientReady = true
+      maybeOpenMurmur()
+    }
+
+    const maybeOpenMurmur = () => {
+      if (clientReady && dataChannel && (dataChannel.readyState === "open")) {
         murmurSocket = new tls.TLSSocket(net.createConnection(murmurPort, murmurHost, () => {
           murmurSocket.connected = true
-
+  
           murmurSocket.on("end", () => {
             log("murmurSocket end"); 
             if (murmurSocket) {
@@ -88,123 +84,142 @@ wsServer.on("connection", webSocket => {
           });
         
           murmurSocket.on("data", data => {
-            peerConnection.dataChannel.send(data)
+            dataChannel.send(data)
           })
-
-          peerConnection.dataChannel.onmessage = evt => {
-            murmurSocket.write(Buffer.from(evt.data))
-          }
+  
+          webSocket.sendJson({type: "start"})
         }))
-      
       }
-    
-      //
-      // Shutdown
-      //
-    
-      let shuttingDown = false
-      const shutdown = () => {
-        if (!shuttingDown) {
-          shuttingDown = true
-          log("shutdown")
-          if (murmurSocket) {
-            murmurSocket.end()
-            murmurSocket = null
-          }
-          webSocket.close()
-          if (peerConnection.dataChannel) {
-            peerConnection.dataChannel.close()
-            peerConnection.dataChannel = null
-          }
-          peerConnection.close()
-        }
-      }
-    
-      //
-      // Handle disconnections & errors
-      //
-    
-      peerConnection.dataChannel.onclose = shutdown
-    
-      peerConnection.dataChannel.onerror = err => {
-        log("dataChannel error:", err)
-      }
-     
-      //
-      // Handle incoming data
-      //
-    
-      //For encoding and sending audio data
-      const opusEncoder = new opus.OpusEncoder(48000, 1)
-      let rawDataBuffer = new Uint16Array(480 * 5)
-      let rawDataBufferOffset = 0
-      peerConnection.packetCount = 0
-      let lastSampleCount
-    
-      audioSink.ondata = data => {
-        if (!murmurSocket.connected) {
-          return
-        }
-    
-        if (data.samples.length > 480) {
-          throw new Error("Too many samples in packet: " + data.samples.length)
-        }
-    
-        if (lastSampleCount && (data.samples.length > lastSampleCount)) {
-          log("discarding (size change)", rawDataBufferOffset)
-          rawDataBufferOffset = 0
-        }
-        lastSampleCount = data.samples.length
+    }
 
-        new Uint16Array(rawDataBuffer.buffer, rawDataBufferOffset * 2, data.samples.length).set(data.samples)
-        rawDataBufferOffset += data.samples.length
-    
-        if (rawDataBufferOffset > 1920) {
-          log("discarding (too big)", rawDataBufferOffset)
-          rawDataBufferOffset = 0
-        }
-    
-        if (rawDataBufferOffset === 1920) {
-    
-          //Convert raw samples to Opus
-          const encodedSamples = opusEncoder.encode(new Uint16Array(rawDataBuffer.buffer, 0, rawDataBufferOffset));
-          rawDataBufferOffset = 0
-    
-          const samplesLength = encodedSamples.byteLength
-          const sequenceCountLength = writeVarintToByteArray(peerConnection.packetCount)
-          const sampleByteCountLength = writeVarintToByteArray(samplesLength)
-          
-          //Build TCP tunnel packet
-          const packet = new Uint8Array(2 + 4 + 1 + sequenceCountLength + sampleByteCountLength + samplesLength + 12)
-    
-          //Packet type 1 = UDP Tunnel
-          writeInt16ToByteArray(1, packet, 0)
-    
-          //Length of UDP packet
-          writeInt32ToByteArray(1 + sequenceCountLength + sampleByteCountLength + samplesLength + 12 , packet, 2)
-    
-          //UDP packet header: Packet type (OPUS) and target (0) 
-          packet[6] = 128
-    
-          //Sequence number
-          writeVarintToByteArray(peerConnection.packetCount, packet, 7)
-          
-          //Length of the raw data
-          writeVarintToByteArray(samplesLength, packet, 7  + sequenceCountLength)
-    
-          //The raw data
-          new Uint8Array(packet.buffer, 7 + sequenceCountLength + sampleByteCountLength, samplesLength).set(encodedSamples)
-    
-          //Positional data 
-          new Uint8Array(packet.buffer, 7 + sequenceCountLength + sampleByteCountLength + samplesLength, 12).set(positionDataBytes)
-    
-          //Send it off!
-          murmurSocket.write(Buffer.from(new Uint8Array(packet.buffer, 0, 7 + sequenceCountLength + sampleByteCountLength + samplesLength + 12)))
-        }
-        peerConnection.packetCount += 1
+    //
+    // Create connections
+    //
+  
+    const audioSink = new RTCAudioSink(peerConnection.addTransceiver('audio', {direction: "recvonly"}).receiver.track)
+  
+    dataChannel = peerConnection.createDataChannel("dataChannel")
+
+    dataChannel.onopen = () => {
+      log(`dataChannel open (state = ${dataChannel.readyState})`)
+      maybeOpenMurmur()
+    }
+
+    dataChannel.onmessage = evt => {
+      if (murmurSocket && murmurSocket.connected) {
+        murmurSocket.write(Buffer.from(evt.data))
+      } else {
+        log("Got dataChannel bessage before murmurSocket is connected")
       }
-    })
-  } //))
+    }
+
+
+    //
+    // Shutdown
+    //
+  
+    let shuttingDown = false
+    const shutdown = () => {
+      if (!shuttingDown) {
+        shuttingDown = true
+        log("shutdown")
+        if (murmurSocket) {
+          murmurSocket.end()
+          murmurSocket = null
+        }
+        webSocket.close()
+        if (dataChannel) {
+          dataChannel.close()
+          dataChannel = null
+        }
+        peerConnection.close()
+      }
+    }
+  
+    //
+    // Handle disconnections & errors
+    //
+  
+    dataChannel.onclose = shutdown
+  
+    dataChannel.onerror = err => {
+      log("dataChannel error:", err)
+    }
+    
+    //
+    // Handle incoming data
+    //
+  
+    //For encoding and sending audio data
+    const opusEncoder = new opus.OpusEncoder(48000, 1)
+    let rawDataBuffer = new Uint16Array(480 * 5)
+    let rawDataBufferOffset = 0
+    peerConnection.packetCount = 0
+    let lastSampleCount
+  
+    audioSink.ondata = data => {
+      if (!murmurSocket.connected) {
+        return
+      }
+  
+      if (data.samples.length > 480) {
+        throw new Error("Too many samples in packet: " + data.samples.length)
+      }
+  
+      if (lastSampleCount && (data.samples.length > lastSampleCount)) {
+        log("discarding (size change)", rawDataBufferOffset)
+        rawDataBufferOffset = 0
+      }
+      lastSampleCount = data.samples.length
+
+      new Uint16Array(rawDataBuffer.buffer, rawDataBufferOffset * 2, data.samples.length).set(data.samples)
+      rawDataBufferOffset += data.samples.length
+  
+      if (rawDataBufferOffset > 1920) {
+        log("discarding (too big)", rawDataBufferOffset)
+        rawDataBufferOffset = 0
+      }
+  
+      if (rawDataBufferOffset === 1920) {
+  
+        //Convert raw samples to Opus
+        const encodedSamples = opusEncoder.encode(new Uint16Array(rawDataBuffer.buffer, 0, rawDataBufferOffset));
+        rawDataBufferOffset = 0
+  
+        const samplesLength = encodedSamples.byteLength
+        const sequenceCountLength = writeVarintToByteArray(peerConnection.packetCount)
+        const sampleByteCountLength = writeVarintToByteArray(samplesLength)
+        
+        //Build TCP tunnel packet
+        const packet = new Uint8Array(2 + 4 + 1 + sequenceCountLength + sampleByteCountLength + samplesLength + 12)
+  
+        //Packet type 1 = UDP Tunnel
+        writeInt16ToByteArray(1, packet, 0)
+  
+        //Length of UDP packet
+        writeInt32ToByteArray(1 + sequenceCountLength + sampleByteCountLength + samplesLength + 12 , packet, 2)
+  
+        //UDP packet header: Packet type (OPUS) and target (0) 
+        packet[6] = 128
+  
+        //Sequence number
+        writeVarintToByteArray(peerConnection.packetCount, packet, 7)
+        
+        //Length of the raw data
+        writeVarintToByteArray(samplesLength, packet, 7  + sequenceCountLength)
+  
+        //The raw data
+        new Uint8Array(packet.buffer, 7 + sequenceCountLength + sampleByteCountLength, samplesLength).set(encodedSamples)
+  
+        //Positional data 
+        new Uint8Array(packet.buffer, 7 + sequenceCountLength + sampleByteCountLength + samplesLength, 12).set(positionDataBytes)
+  
+        //Send it off!
+        murmurSocket.write(Buffer.from(new Uint8Array(packet.buffer, 0, 7 + sequenceCountLength + sampleByteCountLength + samplesLength + 12)))
+      }
+      peerConnection.packetCount += 1
+    }
+  })
 })
 
 //
