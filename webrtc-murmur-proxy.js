@@ -59,6 +59,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
     let clientReady = false
     let murmurSocket = null
     let dataChannel = null
+    let audioSink = null
 
     webSocket.sendJson = obj => webSocket.send(JSON.stringify(obj))
 
@@ -71,11 +72,17 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
     
     EstablishPeerConnection(webSocket, log, peerConnection => {
 
+      peerConnection.ontrack = evt => {
+        log("got track")
+        audioSink = new RTCAudioSink(evt.track)
+        audioSink.ondata = processAudioData
+      }
+
       peerConnection.onClientReady = () => {
         clientReady = true
         maybeOpenMurmur()
       }
-
+      
       const maybeOpenMurmur = () => {
         if (clientReady && dataChannel && (dataChannel.readyState === "open")) {
           murmurSocket = new tls.TLSSocket(net.createConnection(murmurPort, murmurHost, () => {
@@ -106,8 +113,6 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
       // Create connections
       //
     
-      const audioSink = new RTCAudioSink(peerConnection.addTransceiver('audio', {direction: "recvonly"}).receiver.track)
-    
       dataChannel = peerConnection.createDataChannel("dataChannel")
 
       dataChannel.onopen = () => {
@@ -119,7 +124,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
         if (murmurSocket && murmurSocket.connected) {
           murmurSocket.write(Buffer.from(evt.data))
         } else {
-          log("Got dataChannel bessage before murmurSocket is connected")
+          log("Got dataChannel message before murmurSocket is connected")
         }
       }
 
@@ -167,7 +172,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
       peerConnection.packetCount = 0
       let lastSampleCount
     
-      audioSink.ondata = data => {
+      const processAudioData = data => {
         if (!murmurSocket.connected) {
           return
         }
@@ -176,7 +181,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
           throw new Error("Too many samples in packet: " + data.samples.length)
         }
     
-        if (lastSampleCount && (data.samples.length > lastSampleCount)) {
+        if (lastSampleCount && (data.samples.length > lastSampleCount) && rawDataBufferOffset) {
           log("discarding (size change)", rawDataBufferOffset)
           rawDataBufferOffset = 0
         }
