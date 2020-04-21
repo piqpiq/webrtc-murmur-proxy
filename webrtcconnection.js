@@ -56,6 +56,12 @@ export default function EstablishPeerConnection(signalingSocket, log, beforeOffe
 
   peerConnection.onnegotiationneeded = () => {
     log("onnegotiationneeded")
+    peerConnection.createOffer()
+    .then(offer => peerConnection.setLocalDescription(offer))
+    .then(() => signalingSocket.sendJson({
+      type: "offer",
+      offer: peerConnection.localDescription
+    }))
   }
 
   peerConnection.onicecandidate = evt => {
@@ -75,13 +81,6 @@ export default function EstablishPeerConnection(signalingSocket, log, beforeOffe
   beforeOffer(peerConnection)
 
   doSetTimeout(TIME_TO_CONNECTED)
-
-  peerConnection.createOffer()
-    .then(offer => peerConnection.setLocalDescription(offer))
-    .then(() => signalingSocket.sendJson({
-      type: "offer",
-      offer: peerConnection.localDescription
-    }))
 
   signalingSocket.on("message", msg => {
     const json = JSON.parse(msg)
