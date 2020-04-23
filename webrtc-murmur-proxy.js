@@ -8,6 +8,7 @@ import fs from "fs"
 import { nonstandard } from "wrtc"
 import opus from "@discordjs/opus"
 import EstablishPeerConnection from "./webrtcconnection"
+import PacketDataStream from "./PacketDataStream"
 const RTCAudioSink = nonstandard.RTCAudioSink
 
 const murmurHost = "default.mumble.prod.hearo.live"
@@ -199,38 +200,24 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
     
           //Convert raw samples to Opus
           const encodedSamples = opusEncoder.encode(new Uint16Array(rawDataBuffer.buffer, 0, rawDataBufferOffset));
-          rawDataBufferOffset = 0
     
-          const samplesLength = encodedSamples.byteLength
-          const sequenceCountLength = writeVarintToByteArray(peerConnection.packetCount)
-          const sampleByteCountLength = writeVarintToByteArray(samplesLength)
-          
           //Build TCP tunnel packet
-          const packet = new Uint8Array(2 + 4 + 1 + sequenceCountLength + sampleByteCountLength + samplesLength + 12)
-    
-          //Packet type 1 = UDP Tunnel
-          writeInt16ToByteArray(1, packet, 0)
-    
-          //Length of UDP packet
-          writeInt32ToByteArray(1 + sequenceCountLength + sampleByteCountLength + samplesLength + 12 , packet, 2)
-    
-          //UDP packet header: Packet type (OPUS) and target (0) 
-          packet[6] = 128
-    
-          //Sequence number
-          writeVarintToByteArray(peerConnection.packetCount, packet, 7)
-          
-          //Length of the raw data
-          writeVarintToByteArray(samplesLength, packet, 7  + sequenceCountLength)
-    
-          //The raw data
-          new Uint8Array(packet.buffer, 7 + sequenceCountLength + sampleByteCountLength, samplesLength).set(encodedSamples)
-    
-          //Positional data 
-          new Uint8Array(packet.buffer, 7 + sequenceCountLength + sampleByteCountLength + samplesLength, 12).set(positionDataBytes)
+          const pds = new PacketDataStream(2 + 4 + 1 + 4 + 4 + encodedSamples.byteLength + 12)      //Allow for up to four bytes for varints
+           
+          pds.putInt16(1)                             //16-bit int: Packet type 1 = UDP Tunnel
+          pds.skip(4)                                 //Leave space for 32-bit in packet length
+          pds.putByte(128)                            //8-bit int: UDP packet header -- Packet type (OPUS) and target (0) 
+          pds.putVarint(peerConnection.packetCount)   //Varint: Sequence number
+          pds.putVarint(encodedSamples.byteLength)    //Varint: Length of the raw data
+          pds.putBytes(encodedSamples)                //Byte arrray of encoded audio
+          pds.putBytes(positionDataBytes)             //Byte array of position data.  May be optional.
+          pds.putInt32(pds.offset - 6, 2)             //Save the packet length (less the type & length part) back at position 2 in the buffer
     
           //Send it off!
-          murmurSocket.write(Buffer.from(new Uint8Array(packet.buffer, 0, 7 + sequenceCountLength + sampleByteCountLength + samplesLength + 12)))
+          murmurSocket.write(Buffer.from(new Uint8Array(pds.buffer.buffer, 0, pds.offset)))
+
+          //Reset to start of buffer
+          rawDataBufferOffset = 0
         }
         peerConnection.packetCount += 1
       }
@@ -241,55 +228,6 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
 //
 // Utility functions
 //
-
-function writeIntToByteArray(int, intLength, byteArray, offset) {
-  for (let i = intLength; i > 0;) {
-      i--
-      var byte = int & 0xff;
-      byteArray[offset + i] = byte;
-      int = (int - byte) / 256 ;
-  }
-}
-
-function writeInt32ToByteArray(int, byteArray, offset) {
-  return writeIntToByteArray(int, 4, byteArray, offset)
-}
-
-function writeInt16ToByteArray(int, byteArray, offset) {
-  return writeIntToByteArray(int, 2, byteArray, offset)
-}
-
-//Returns number of bytes written. If byteArray not specified, return just the byte count.
-function writeVarintToByteArray(int, byteArray, offset) {
-
-  if (int < 128) {
-    if (byteArray) {
-      byteArray[offset] = int
-    }
-    return 1
-  } else if (int < 16384) {
-    if (byteArray) {
-      byteArray[offset] = int / 256 + 128
-      byteArray[offset + 1] = int & 255
-    }
-    return 2
-  } else if (int < 2097152) {
-    if (byteArray) {
-      byteArray[offset] = int / 65536 + 192
-      byteArray[offset + 1] = (int / 256) & 255
-      byteArray[offset + 2] = int & 255
-    }
-    return 3
-  } else if (int < 268435456) {
-    if (byteArray) {
-      byteArray[offset] = int / 16777216 + 224
-      byteArray[offset + 1] = (int / 65536) & 255
-      byteArray[offset + 2] = (int / 256) & 255
-      byteArray[offset + 3] = int & 255
-    }
-    return 4
-  }
-}
 
 const digit0 = [15, 12, 5, 6, 4, 9, 0, 1, 2, 10, 13, 11, 3, 8, 14, 7]
 const digit1 = [11, 3, 14, 4, 13, 1, 5, 7, 6, 8, 10, 9, 0, 15, 12, 2]
