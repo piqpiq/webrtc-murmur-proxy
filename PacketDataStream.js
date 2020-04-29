@@ -29,6 +29,57 @@ export default class PacketDataStream {
     this.offset += length
   }
 
+  getByte() {
+    if (this.offset >= this.buffer.length) {
+      throw new Error("Reading past the end of pds buffer")
+    }
+    return this.buffer[this.offset++]
+  }
+
+  getInt(intLength, offset) {
+    if (offset === undefined) {
+      offset = this.offset
+      this.offset += intLength
+    }
+    let result = 0
+    for (let i = 0; i < intLength; i++) {
+      result = result * 256 + this.buffer[offset++]
+    }
+    return result
+  }
+
+  getInt16(offset) {
+    return this.getInt(2, offset)
+  }
+  
+  getInt32(offset) {
+    return this.getInt(4, offset)
+  }
+
+  getVarint() {
+    const firstByte = this.getByte()
+    if (firstByte < 128) {
+      return firstByte
+    } else if ((firstByte & 192) === 128) {
+      return (firstByte & 63) * 256 + this.getByte()
+    } else if ((firstByte & 224) === 192) {
+      return (firstByte & 31) * 65536 + this.getByte() * 256 + this.getByte()
+    } else if ((firstByte & 240) === 224) {
+      return (firstByte & 15) * 256 * 65536 + this.getByte() * 65536 + this.getByte() * 256 + this.getByte()
+    } else if ((firstByte & 252) === 240) {
+      return this.getInt(4)
+    } else if ((firstByte & 252) === 244) {
+      return this.getInt(8)
+    } else {
+      console.log("UNEXPECTED DATA IN readVarint")
+    }
+  }
+
+  //Returns the remainder of the buffer
+  remainder() {
+    return this.buffer.subarray(this.offset)
+  }
+
   putByte(value) {
     if (this.offset >= this.buffer.length) {
       throw new Error("Writing past the end of pds buffer")
@@ -82,5 +133,10 @@ export default class PacketDataStream {
     this.buffer.set(byteArray, this.offset)
     this.offset += byteArray.byteLength
   }
-  
+
+  //Like the TypedArray set, except source must be a TypedArray.  Offset is updated after copy.
+  set(source) {
+    this.buffer(set, source.buffer, this.offset)
+    this.offset += source.byteLength
+  }
 }
