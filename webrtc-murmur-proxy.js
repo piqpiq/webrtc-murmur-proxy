@@ -5,11 +5,11 @@ import tls from "tls"
 import net from "net"
 import https from "https"
 import fs from "fs"
-import { nonstandard } from "wrtc"
 import opus from "@discordjs/opus"
+import HighResolutionTimer from "./HighResTimer"
 import EstablishPeerConnection from "./webrtcconnection"
 import PacketDataStream from "./PacketDataStream"
-const RTCAudioSink = nonstandard.RTCAudioSink
+const { RTCAudioSink, RTCAudioSource } = require("wrtc").nonstandard
 
 const murmurHost = "default.mumble.prod.hearo.live"
 const murmurPort = 64738
@@ -42,9 +42,6 @@ process.on('warning', (warning) => {
   console.warn(warning.stack);
 });
 
-const positionDataBytes = new Uint8Array(new Float32Array([0.0, 0.0, 0.0]))
-
-//const webServer = https.createServer({pfx: fs.readFileSync("cert.pfx"), passphrase: "vecmat.asm"}, (req, res) => {    //For localhost testing
 const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs.readFileSync("key.pem")}, (req, res) => {    //Running on Murmur server
 
   //We don"t expect to get HTTP requests, only WebSocket requests
@@ -61,6 +58,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
     let murmurSocket = null
     let dataChannel = null
     let audioSink = null
+    let tracks = {}
 
     webSocket.sendJson = obj => webSocket.send(JSON.stringify(obj))
 
@@ -85,7 +83,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
       }
       
       const maybeOpenMurmur = () => {
-        if (clientReady && dataChannel && (dataChannel.readyState === "open")) {
+        if (clientReady && dataChannel && (dataChannel.readyState === "open") && !murmurSocket) {
           murmurSocket = new tls.TLSSocket(net.createConnection(murmurPort, murmurHost, () => {
             murmurSocket.connected = true
     
@@ -101,8 +99,159 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
               log("Error on Murmur socket:", err);
             });
           
-            murmurSocket.on("data", data => {
-              dataChannel.send(data)
+            //Called every 10ms to upload audio data to the RTCAudioSource
+            const uploadAudioData = (audioSource, trackData) => {
+              const buffer = trackData.buffers[trackData.curBuffer]
+              if (!buffer) {
+                return
+              }
+              if (trackData.bufferPos + 480 <= buffer.length) {
+                const samplesData = {
+                  samples: new Uint16Array(buffer.subarray(trackData.bufferPos, trackData.bufferPos + 480)),
+                  sampleRate: 48000
+                }
+                audioSource.onData(samplesData)
+                trackData.bufferPos += 480
+                if (trackData.bufferPos === buffer.length) {
+                  trackData.buffers[trackData.curBuffer] = null
+                  trackData.curBuffer = (trackData.curBuffer + 1) % trackData.buffers.length
+                  trackData.bufferPos = 0
+                }
+              } else {
+                log("ERROR: Partial data in upload buffer")
+              }
+            }
+
+            const handleAudioFromMurmur = pds => {
+              const typeTarget = pds.getByte()
+              if (typeTarget !== 128) {
+                log("ERROR: Unexpected type/target value:", typeTarget)
+                return
+              }
+              const sessionId = pds.getVarint()
+              const sequenceNumber = pds.getVarint()
+              //console.log("audio packet:", "length =", pds.length, "(", pds.length - pds.offset, ")", "type/target =", typeTarget, "sessionId =", sessionId, "sequenceNumber =", sequenceNumber)
+              let opusLength = pds.getVarint()
+              if (opusLength & 0x2000) {    //Last packet flag -- ignore
+                opusLength &= 0x1FFF
+              }
+              const remaining = pds.remaining()
+              if ((remaining !== opusLength) && (remaining !== opusLength + 12)) {    //Allow for 12 bytes of position data on end
+                log("ERROR: Opus data length mismatch", pds.remaining(), opusLength)
+                return
+              }
+              let trackData = tracks[sessionId]
+              if (!trackData) {
+                const source = new RTCAudioSource()
+                const track = source.createTrack()
+                webSocket.sendJson({    //Tell the client which user this track goes with
+                  type: "user",
+                  sessionId: sessionId,
+                  trackId: track.id
+                })
+                peerConnection.addTrack(track)
+                tracks[sessionId] = trackData = {buffers: [null, null, null], curBuffer: 0, bufferPos: 0} //, num: trackCount++}
+                trackData.intervalTimer = new HighResolutionTimer({
+                  duration: 10,
+                  callback: () => uploadAudioData(source, trackData)
+                });
+                trackData.intervalTimer.run()
+                trackData.encoder = new opus.OpusEncoder(48000, 1)
+              } 
+              const opusData = new Uint8Array(pds.buffer.buffer, pds.offset, opusLength)
+              const pcmData = new Uint16Array(trackData.encoder.decode(opusData).buffer)
+              let i
+              for (i = 0; i < trackData.buffers.length; i++) {
+                const bufNum = (trackData.curBuffer + i) % trackData.buffers.length
+                if (trackData.buffers[bufNum] === null) {
+                  trackData.buffers[bufNum] = pcmData
+                  break
+                }
+              }
+              if (i === trackData.buffers.length) {
+                log("WARNING: all buffers full")
+              }
+            }
+
+            let startIndex = 0
+            let audioPacket = null    //Used to assemble one audio packet from two data events
+            let sendCount = 0
+            let leftover = null
+
+            murmurSocket.on("data", murmurData => {
+
+              if (leftover) {   //Previous chunk didn't have enough data left to read type & length, so add that bit onto this chunk
+                const leftoverLength = leftover.remaining()
+                const newMurmurData = new Uint8Array(leftoverLength + murmurData.byteLength)
+                newMurmurData.set(leftover.buffer.subarray(leftover.offset))
+                newMurmurData.set(murmurData, leftoverLength)
+                murmurData = newMurmurData
+                leftover = null
+              }
+
+              if (audioPacket) {     //Part-way through an audio packet
+                const length = pds.getInt32(2)    //Get length from start of packet
+                const bytesNeeded = length - (audioPacket.offset - 6)
+                audioPacket.set(murmurData.subarray(0, bytesNeeded))
+                audioPacket.offset = 6
+                handleAudioFromMurmur(audioPacket)
+                audioPacket = null
+                if (bytesNeeded === murmurData.length) {    //We used up all the data
+                  return
+                }
+                murmurData = murmurData.subarray(bytesNeeded)
+              }
+
+              const pds = new PacketDataStream(murmurData, startIndex)
+              startIndex = 0
+
+              while (true) {
+
+                const remaining = pds.remaining()
+                if (remaining < 6) {      //Not enough data to read type & length
+                  if (pds.offset > 0) {   //Send data up to this point
+                    dataChannel.send(murmurData.subarray(0, pds.offset))
+                  }
+                  leftover = pds          //Save the leftover part
+                  break
+                }
+
+                let type = pds.getInt16()
+                let length = pds.getInt32()
+
+                if (type === 1) {       //Audio packet
+
+                  //If we're not at the start of buffer, send the part before
+                  if (pds.offset > 6) {
+                    dataChannel.send(murmurData.subarray(0, pds.offset - 6))
+                  }
+                  if (pds.offset + length > murmurData.length) {
+                    audioPacket = new PacketDataStream(length + 6)
+                    pds.skip(-6)
+                    audioPacket.putBytes(pds.remainder())
+                    break
+                  }
+                  const saveOffset = pds.offset
+                  handleAudioFromMurmur(pds)
+                  if (saveOffset + length === murmurData.length) {
+                    break
+                  }
+                  murmurData = murmurData.subarray(saveOffset + length)
+                  pds.reset(murmurData)
+
+                } else {    //Not an audio packet
+
+                  const remaining = pds.remaining()
+                  if (length < remaining) {
+                    pds.skip(length)
+                  } else {  //End of the buffer, so send data
+                    dataChannel.send(murmurData)       //Send the data
+                    sendCount++
+                    startIndex = length - remaining
+                    break
+                  }
+                }
+              }
             })
     
             webSocket.sendJson({type: "start"})
@@ -128,7 +277,6 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
           log("Got dataChannel message before murmurSocket is connected")
         }
       }
-
 
       //
       // Shutdown
@@ -172,9 +320,9 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
       let rawDataBufferOffset = 0
       peerConnection.packetCount = 0
       let lastSampleCount
-    
+
       const processAudioData = data => {
-        if (!murmurSocket.connected) {
+        if (!murmurSocket || !murmurSocket.connected) {
           return
         }
     
@@ -209,8 +357,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
           pds.putByte(128)                            //8-bit int: UDP packet header -- Packet type (OPUS) and target (0) 
           pds.putVarint(peerConnection.packetCount)   //Varint: Sequence number
           pds.putVarint(encodedSamples.byteLength)    //Varint: Length of the raw data
-          pds.putBytes(encodedSamples)                //Byte arrray of encoded audio
-          pds.putBytes(positionDataBytes)             //Byte array of position data.  May be optional.
+          pds.putBytes(encodedSamples)                //Byte array of encoded audio
           pds.putInt32(pds.offset - 6, 2)             //Save the packet length (less the type & length part) back at position 2 in the buffer
     
           //Send it off!
@@ -226,7 +373,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
 })
 
 //
-// Utility functions
+// Function to generate id numbers
 //
 
 const digit0 = [15, 12, 5, 6, 4, 9, 0, 1, 2, 10, 13, 11, 3, 8, 14, 7]
