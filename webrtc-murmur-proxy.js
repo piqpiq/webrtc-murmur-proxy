@@ -173,6 +173,15 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
               }
             }
 
+            const dataChannelSend = data => {
+              if (dataChannel.readyState === "open") {
+                dataChannel.send(data)
+              } else {
+                const err = new Error()
+                log("ERROR: DataChannel readyState is", dataChannel.readyState, "(called from line", extractLineNumFromStack(err.stack, 1) + ")")
+              }
+            }
+
             let startIndex = 0
             let audioPacket = null    //Used to assemble one audio packet from two data events
             let sendCount = 0
@@ -210,7 +219,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                 const remaining = pds.remaining()
                 if (remaining < 6) {      //Not enough data to read type & length
                   if (pds.offset > 0) {   //Send data up to this point
-                    dataChannel.send(murmurData.subarray(0, pds.offset))
+                    dataChannelSend(murmurData.subarray(0, pds.offset))
                   }
                   leftover = pds          //Save the leftover part
                   break
@@ -223,7 +232,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
 
                   //If we're not at the start of buffer, send the part before
                   if (pds.offset > 6) {
-                    dataChannel.send(murmurData.subarray(0, pds.offset - 6))
+                    dataChannelSend(murmurData.subarray(0, pds.offset - 6))
                   }
                   if (pds.offset + length > murmurData.length) {
                     audioPacket = new PacketDataStream(length + 6)
@@ -245,7 +254,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                   if (length < remaining) {
                     pds.skip(length)
                   } else {  //End of the buffer, so send data
-                    dataChannel.send(murmurData)       //Send the data
+                    dataChannelSend(murmurData)       //Send the data
                     sendCount++
                     startIndex = length - remaining
                     break
@@ -410,3 +419,34 @@ function generateId() {
   return result
 }
 
+//
+//  Extract a line number from a stack trace string
+//
+
+function parseStackLine(line) {
+  const parts = line.match(new RegExp("\\s*at\\s+(\\S+)\\s+\\((.+):(\\d+):(\\d+)\\)"))
+  return {
+    function: parts[1],
+    file: parts[2],
+    line: parts[3],
+    column: parts[4]
+  }
+}
+
+function extractLineNumFromStack(trace, targetRow) {
+  if (trace.startsWith("Error")) {
+    let start = 0, end
+    let row = -1
+    while (start < trace.length) {
+      end = trace.indexOf("\n", start)
+      if (end === -1) {
+        end = trace.length
+      }
+      if (row === targetRow) {
+        return parseStackLine(trace.substring(start, end)).line
+      }
+      start = end + 1
+      row++
+    }
+  }
+}
