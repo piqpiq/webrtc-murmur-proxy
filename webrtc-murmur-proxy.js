@@ -87,32 +87,25 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
           murmurSocket = new tls.TLSSocket(net.createConnection(murmurPort, murmurHost, () => {
             murmurSocket.connected = true
     
-            murmurSocket.on("end", (t) => {
-              log("murmurSocket end", t); 
-              if (murmurSocket) {
-                murmurSocket.connected = false
-              }
+            murmurSocket.on("end", () => {
+              log("murmurSocket end"); 
               shutdown()
             })
           
-            //Combine this with above if t tells us what the event is
-            murmurSocket.on("close", (t) => {
-              log("murmurSocket close", t); 
-              if (murmurSocket) {
-                murmurSocket.connected = false
-              }
+            murmurSocket.on("close", () => {
+              log("murmurSocket close"); 
               shutdown()
             })
 
             murmurSocket.on("error", err => {
-              log("Error on Murmur socket:", err.name);
+              log("Error on Murmur socket:", err.name, err.message);
             });
           
             //Called every 10ms to upload audio data to the RTCAudioSource
             const uploadAudioData = (audioSource, trackData) => {
               if (trackData.buffersFull) {
-                log("Uploading", trackData.curBuffer)
-                trackData.buffersFull = false
+                log("Uploading", trackData.curBuffer, trackData.buffers[trackData.curBuffer].length, Date.now())
+                trackData.buffersFull--
               }
               const buffer = trackData.buffers[trackData.curBuffer]
               if (!buffer) {
@@ -182,8 +175,8 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                 }
               }
               if (i === trackData.buffers.length) {
-                log("WARNING: all buffers full", trackData.curBuffer)
-                trackData.buffersFull = true
+                log("WARNING: all buffers full", trackData.curBuffer, pcmData.length, Date.now())
+                trackData.buffersFull = 20
               }
             }
 
