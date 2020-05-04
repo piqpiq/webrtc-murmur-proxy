@@ -57,11 +57,17 @@ export default function EstablishPeerConnection(signalingSocket, log, beforeOffe
   peerConnection.onnegotiationneeded = () => {
     log("onnegotiationneeded")
     peerConnection.createOffer()
-    .then(offer => peerConnection.setLocalDescription(offer))
-    .then(() => signalingSocket.sendJson({
-      type: "offer",
-      offer: peerConnection.localDescription
-    }))
+      .then(offer => {
+        if (peerConnection.signalingState !== "stable") {   //In case we received an offer while we were waiting for ours to be created
+          log("aborting offer")
+          return
+        } 
+        peerConnection.setLocalDescription(offer)
+          .then(() => signalingSocket.sendJson({
+            type: "offer",
+            offer: peerConnection.localDescription
+          }))
+      })
   }
 
   peerConnection.onicecandidate = evt => {
@@ -89,12 +95,28 @@ export default function EstablishPeerConnection(signalingSocket, log, beforeOffe
 
       case "answer":
         log("answer received")
+        if (json.answer.type !== "answer") {
+          log("ERROR: Wrong type for answer:", json.answer.type)
+          break
+        }
         peerConnection.setRemoteDescription(json.answer)
         break
 
       case "offer":
         log("offer received")
-        peerConnection.setRemoteDescription(json.offer)
+        if (json.offer.type !== "offer") {
+          log("ERROR: Wrong type for offer:", json.offer.type)
+          break
+        }
+        let maybeRollback
+        if (peerConnection.signalingState !== "stable") {   //Rollback if detect "glare"
+          log("Rollback")
+          maybeRollback = peerConnection.setLocalDescription({type: "rollback"})
+        } else {
+          maybeRollback = Promise.resolve()
+        }
+        return maybeRollback
+          .then(() => peerConnection.setRemoteDescription(json.offer))
           .then(() => peerConnection.createAnswer())
           .then(answer => {
             peerConnection.setLocalDescription(answer)
