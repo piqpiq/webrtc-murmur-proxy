@@ -87,20 +87,33 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
           murmurSocket = new tls.TLSSocket(net.createConnection(murmurPort, murmurHost, () => {
             murmurSocket.connected = true
     
-            murmurSocket.on("end", () => {
-              log("murmurSocket end"); 
+            murmurSocket.on("end", (t) => {
+              log("murmurSocket end", t); 
               if (murmurSocket) {
                 murmurSocket.connected = false
               }
               shutdown()
             })
           
+            //Combine this with above if t tells us what the event is
+            murmurSocket.on("close", (t) => {
+              log("murmurSocket close", t); 
+              if (murmurSocket) {
+                murmurSocket.connected = false
+              }
+              shutdown()
+            })
+
             murmurSocket.on("error", err => {
-              log("Error on Murmur socket:", err);
+              log("Error on Murmur socket:", err.name);
             });
           
             //Called every 10ms to upload audio data to the RTCAudioSource
             const uploadAudioData = (audioSource, trackData) => {
+              if (trackData.buffersFull) {
+                log("Uploading", trackData.curBuffer)
+                trackData.buffersFull = false
+              }
               const buffer = trackData.buffers[trackData.curBuffer]
               if (!buffer) {
                 return
@@ -169,7 +182,8 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                 }
               }
               if (i === trackData.buffers.length) {
-                log("WARNING: all buffers full")
+                log("WARNING: all buffers full", trackData.curBuffer)
+                trackData.buffersFull = true
               }
             }
 
@@ -313,7 +327,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
       // Handle disconnections & errors
       //
     
-      dataChannel.onclose = shutdown
+      dataChannel.onclose = dataChannel.onclosing = shutdown
     
       dataChannel.onerror = err => {
         log("dataChannel error:", err)
