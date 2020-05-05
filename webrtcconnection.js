@@ -72,7 +72,7 @@ export default function EstablishPeerConnection(signalingSocket, log, beforeOffe
 
   peerConnection.onicecandidate = evt => {
     if (evt.candidate && evt.candidate.candidate) {
-      log("on icecandidate")  //, evt.candidate.candidate)
+      //log("on icecandidate")
       signalingSocket.sendJson({
         type: "ice",
         ice: {
@@ -108,15 +108,7 @@ export default function EstablishPeerConnection(signalingSocket, log, beforeOffe
           log("ERROR: Wrong type for offer:", json.offer.type)
           break
         }
-        let maybeRollback
-        if (peerConnection.signalingState !== "stable") {   //Rollback if detect "glare"
-          log("Rollback")
-          maybeRollback = peerConnection.setLocalDescription({type: "rollback"})
-        } else {
-          maybeRollback = Promise.resolve()
-        }
-        return maybeRollback
-          .then(() => peerConnection.setRemoteDescription(json.offer))
+        peerConnection.setRemoteDescription(json.offer)
           .then(() => peerConnection.createAnswer())
           .then(answer => {
             peerConnection.setLocalDescription(answer)
