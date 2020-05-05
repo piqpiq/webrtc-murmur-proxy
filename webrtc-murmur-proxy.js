@@ -98,7 +98,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
             })
 
             murmurSocket.on("error", err => {
-              log("Error on Murmur socket:", err.name, err.message);
+              log("Error on Murmur socket:", err.message);
             });
           
             //Called every 10ms to upload audio data to the RTCAudioSource
@@ -184,8 +184,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
               if (dataChannel.readyState === "open") {
                 dataChannel.send(data)
               } else {
-                const err = new Error()
-                log("ERROR: DataChannel readyState is", dataChannel.readyState, "(called from line", extractLineNumFromStack(err.stack, 1) + ")")
+                log("Warning: Writing to DataChannel when readyState is", dataChannel.readyState)
               }
             }
 
@@ -426,34 +425,3 @@ function generateId() {
   return result
 }
 
-//
-//  Extract a line number from a stack trace string
-//
-
-function parseStackLine(line) {
-  const parts = line.match(new RegExp("\\s*at\\s+(\\S+)\\s+\\((.+):(\\d+):(\\d+)\\)"))
-  return {
-    function: parts[1],
-    file: parts[2],
-    line: parts[3],
-    column: parts[4]
-  }
-}
-
-function extractLineNumFromStack(trace, targetRow) {
-  if (trace.startsWith("Error")) {
-    let start = 0, end
-    let row = -1
-    while (start < trace.length) {
-      end = trace.indexOf("\n", start)
-      if (end === -1) {
-        end = trace.length
-      }
-      if (row === targetRow) {
-        return parseStackLine(trace.substring(start, end)).line
-      }
-      start = end + 1
-      row++
-    }
-  }
-}
