@@ -125,6 +125,9 @@ export default function EstablishPeerConnection(signalingSocket, log, beforeOffe
         //log("adding iceCandidate")
         if (json.ice.candidate) {
           peerConnection.addIceCandidate(json.ice)
+            .catch(err => {
+              log("Error setting ICE candidate:", err)
+            })
         }
         break
 
