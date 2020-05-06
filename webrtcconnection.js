@@ -108,6 +108,9 @@ export default function EstablishPeerConnection(signalingSocket, log, beforeOffe
           log("ERROR: Wrong type for offer:", json.offer.type)
           break
         }
+        if (peerConnection.signalingState != "stable") {    //If we've already sent out an offer, ignore this one.  Client will do rollback.
+          return
+        }
         peerConnection.setRemoteDescription(json.offer)
           .then(() => peerConnection.createAnswer())
           .then(answer => {
@@ -119,7 +122,7 @@ export default function EstablishPeerConnection(signalingSocket, log, beforeOffe
         break;
 
       case "ice":
-        log("adding iceCandidate")
+        //log("adding iceCandidate")
         if (json.ice.candidate) {
           peerConnection.addIceCandidate(json.ice)
         }
