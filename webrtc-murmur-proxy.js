@@ -103,11 +103,13 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
           
             //Called every 10ms to upload audio data to the RTCAudioSource
             const uploadAudioData = (audioSource, trackData) => {
-              if (trackData.buffersFull) {
-                log("Uploading", trackData.curBuffer, trackData.buffers[trackData.curBuffer].length, Date.now())
-                trackData.buffersFull--
-              }
               const buffer = trackData.buffers[trackData.curBuffer]
+              if (trackData.buffersFull) {
+                log("Uploading", trackData.curBuffer, buffer && buffer.length, Date.now())
+                if (Date.now() > trackData.buffersFull + 1000) {
+                  trackData.buffersFull = 0
+                }
+              }
               if (!buffer) {
                 return
               }
@@ -176,11 +178,15 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
               }
               if (i === trackData.buffers.length) {
                 log("WARNING: all buffers full", trackData.curBuffer, pcmData.length, Date.now())
-                trackData.buffersFull = 20
+                trackData.buffersFull = Date.now()
               }
             }
 
             const dataChannelSend = data => {
+              if (!dataChannel) {
+                log("Warning: Writing to null DataChannel")
+                return
+              }
               if (dataChannel.readyState === "open") {
                 dataChannel.send(data)
               } else {
