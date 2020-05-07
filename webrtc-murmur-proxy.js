@@ -104,14 +104,14 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
             //Called every 10ms to upload audio data to the RTCAudioSource
             const uploadAudioData = (audioSource, trackData) => {
               const buffer = trackData.buffers[trackData.curBuffer]
+              if (!buffer) {
+                return
+              }
               if (trackData.buffersFull) {
                 log("Uploading", trackData.curBuffer, buffer && buffer.length, Date.now())
                 if (Date.now() > trackData.buffersFull + 1000) {
                   trackData.buffersFull = 0
                 }
-              }
-              if (!buffer) {
-                return
               }
               if (trackData.bufferPos + 480 <= buffer.length) {
                 const samplesData = {
@@ -172,12 +172,15 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
               for (i = 0; i < trackData.buffers.length; i++) {
                 const bufNum = (trackData.curBuffer + i) % trackData.buffers.length
                 if (trackData.buffers[bufNum] === null) {
+                  if (trackData.buffersFull) {
+                    log("Storing", bufNum, trackData.curBuffer, sequenceNumber, pcmData.length, pcmData.byteLength, Date.now())
+                  }
                   trackData.buffers[bufNum] = pcmData
                   break
                 }
               }
               if (i === trackData.buffers.length) {
-                log("WARNING: all buffers full", trackData.curBuffer, pcmData.length, Date.now())
+                log("WARNING: all buffers full", trackData.curBuffer, sequenceNumber, pcmData.length, pcmData.byteLength, Date.now())
                 trackData.buffersFull = Date.now()
               }
             }
