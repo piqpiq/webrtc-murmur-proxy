@@ -108,7 +108,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                 return
               }
               if (trackData.buffersFull) {
-                log("Uploading", trackData.curBuffer, buffer && buffer.length, Date.now())
+                log("Uploading", trackData.sessionId, trackData.curBuffer, buffer && buffer.length, Date.now())
                 if (Date.now() > trackData.buffersFull + 1000) {
                   trackData.buffersFull = 0
                 }
@@ -165,6 +165,8 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                 });
                 trackData.intervalTimer.run()
                 trackData.encoder = new opus.OpusEncoder(48000, 1)
+                trackData.sessionId = sessionId
+                log("Adding user", sessionId)
               } 
               const opusData = new Uint8Array(pds.buffer.buffer, pds.offset, opusLength)
               const pcmData = new Uint16Array(trackData.encoder.decode(opusData).buffer)
@@ -173,14 +175,14 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                 const bufNum = (trackData.curBuffer + i) % trackData.buffers.length
                 if (trackData.buffers[bufNum] === null) {
                   if (trackData.buffersFull) {
-                    log("Storing", bufNum, trackData.curBuffer, sequenceNumber, pcmData.length, pcmData.byteLength, Date.now())
+                    log("Storing", sessionId, bufNum, trackData.curBuffer, sequenceNumber, pcmData.length, pcmData.byteLength, Date.now())
                   }
                   trackData.buffers[bufNum] = pcmData
                   break
                 }
               }
               if (i === trackData.buffers.length) {
-                log("WARNING: all buffers full", trackData.curBuffer, sequenceNumber, pcmData.length, pcmData.byteLength, Date.now())
+                log("WARNING: all buffers full", sessionId, trackData.curBuffer, sequenceNumber, pcmData.length, pcmData.byteLength, Date.now())
                 trackData.buffersFull = Date.now()
               }
             }
