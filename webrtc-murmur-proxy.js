@@ -108,7 +108,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                 return
               }
               if (trackData.buffersFull) {
-                log("Uploading", trackData.sessionId, trackData.curBuffer, buffer && buffer.length, Date.now())
+                log(trackData.sessionId, trackData.curBuffer, "    ", buffer && buffer.length, Date.now(), "UPLOADING")
                 if (Date.now() > trackData.buffersFull + 1000) {
                   trackData.buffersFull = 0
                 }
@@ -158,7 +158,8 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                   trackId: track.id
                 })
                 peerConnection.addTrack(track)
-                tracks[sessionId] = trackData = {buffers: [null, null, null], curBuffer: 0, bufferPos: 0} //, num: trackCount++}
+                //Murmur seems to send up to four packets at once, so we need at least five buffers
+                tracks[sessionId] = trackData = {buffers: [null, null, null, null, null], curBuffer: 0, bufferPos: 0}
                 trackData.intervalTimer = new HighResolutionTimer({
                   duration: 10,
                   callback: () => uploadAudioData(source, trackData)
@@ -175,14 +176,14 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                 const bufNum = (trackData.curBuffer + i) % trackData.buffers.length
                 if (trackData.buffers[bufNum] === null) {
                   if (trackData.buffersFull) {
-                    log("Storing", sessionId, bufNum, trackData.curBuffer, sequenceNumber, pcmData.length, pcmData.byteLength, Date.now())
+                    log(sessionId, bufNum, sequenceNumber, pcmData.length, Date.now(), "storing")
                   }
                   trackData.buffers[bufNum] = pcmData
                   break
                 }
               }
               if (i === trackData.buffers.length) {
-                log("WARNING: all buffers full", sessionId, trackData.curBuffer, sequenceNumber, pcmData.length, pcmData.byteLength, Date.now())
+                log(sessionId, trackData.curBuffer, sequenceNumber, pcmData.length, Date.now(),"WARNING: All buffers full")
                 trackData.buffersFull = Date.now()
               }
             }
@@ -356,8 +357,8 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
           throw new Error("Too many samples in packet: " + data.samples.length)
         }
     
-        if (lastSampleCount && (data.samples.length > lastSampleCount) && rawDataBufferOffset) {
-          log("discarding (size change)", rawDataBufferOffset)
+        if (/*lastSampleCount &&*/ (data.samples.length !== lastSampleCount) /*&& rawDataBufferOffset*/) {
+          log("discarding (size change)", rawDataBufferOffset, lastSampleCount, "->", data.samples.length)
           rawDataBufferOffset = 0
         }
         lastSampleCount = data.samples.length
