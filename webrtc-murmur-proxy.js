@@ -357,11 +357,14 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
           throw new Error("Too many samples in packet: " + data.samples.length)
         }
     
-        if (/*lastSampleCount &&*/ (data.samples.length !== lastSampleCount) /*&& rawDataBufferOffset*/) {
-          log("discarding (size change)", rawDataBufferOffset, lastSampleCount, "->", data.samples.length)
-          rawDataBufferOffset = 0
+        if (data.samples.length !== lastSampleCount) {      //Make sure we can get to 1920 even
+          const oldOffset = rawDataBufferOffset
+          if (rawDataBufferOffset) {
+            rawDataBufferOffset = Math.floor(rawDataBufferOffset / data.samples.length) * data.samples.length
+          }
+          log("Size change", lastSampleCount, "->", data.samples.length,"truncating buffer", oldOffset, "->", rawDataBufferOffset)
+          lastSampleCount = data.samples.length
         }
-        lastSampleCount = data.samples.length
 
         new Uint16Array(rawDataBuffer.buffer, rawDataBufferOffset * 2, data.samples.length).set(data.samples)
         rawDataBufferOffset += data.samples.length
@@ -390,10 +393,12 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
           //Send it off!
           murmurSocket.write(Buffer.from(new Uint8Array(pds.buffer.buffer, 0, pds.offset)))
 
+          //Count this as four 10ms (480 sample) frames
+          peerConnection.packetCount += 4
+
           //Reset to start of buffer
           rawDataBufferOffset = 0
         }
-        peerConnection.packetCount += 1
       }
     })
   })
