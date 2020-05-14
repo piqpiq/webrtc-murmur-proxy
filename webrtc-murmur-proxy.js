@@ -357,7 +357,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
           throw new Error("Too many samples in packet: " + data.samples.length)
         }
     
-        if (data.samples.length !== lastSampleCount) {      //Make sure we can get to 1920 even
+        if (data.samples.length !== lastSampleCount) {      //Make sure we can get to 480 even
           const oldOffset = rawDataBufferOffset
           if (rawDataBufferOffset) {
             rawDataBufferOffset = Math.floor(rawDataBufferOffset / data.samples.length) * data.samples.length
@@ -369,12 +369,12 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
         new Uint16Array(rawDataBuffer.buffer, rawDataBufferOffset * 2, data.samples.length).set(data.samples)
         rawDataBufferOffset += data.samples.length
     
-        if (rawDataBufferOffset > 1920) {
+        if (rawDataBufferOffset > 480) {
           log("discarding (too big)", rawDataBufferOffset)
           rawDataBufferOffset = 0
         }
     
-        if (rawDataBufferOffset === 1920) {
+        if (rawDataBufferOffset === 480) {
     
           //Convert raw samples to Opus
           const encodedSamples = opusEncoder.encode(new Uint16Array(rawDataBuffer.buffer, 0, rawDataBufferOffset));
@@ -393,8 +393,8 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
           //Send it off!
           murmurSocket.write(Buffer.from(new Uint8Array(pds.buffer.buffer, 0, pds.offset)))
 
-          //Count this as four 10ms (480 sample) frames
-          peerConnection.packetCount += 4
+          //Count number of 480 sample frames
+          peerConnection.packetCount += rawDataBufferOffset / 480
 
           //Reset to start of buffer
           rawDataBufferOffset = 0
