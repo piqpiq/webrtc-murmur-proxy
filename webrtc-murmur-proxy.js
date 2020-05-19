@@ -86,6 +86,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
         if (clientReady && dataChannel && (dataChannel.readyState === "open") && !murmurSocket) {
           murmurSocket = new tls.TLSSocket(net.createConnection(murmurPort, murmurHost, () => {
             murmurSocket.connected = true
+            let trackCount = 0
     
             murmurSocket.on("end", () => {
               log("murmurSocket end"); 
@@ -152,9 +153,11 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
               if (!trackData) {
                 const source = new RTCAudioSource()
                 const track = source.createTrack()
+                trackCount++
                 webSocket.sendJson({    //Tell the client which user this track goes with
                   type: "user",
                   sessionId: sessionId,
+                  trackNum: trackCount,
                   trackId: track.id
                 })
                 peerConnection.addTrack(track)
