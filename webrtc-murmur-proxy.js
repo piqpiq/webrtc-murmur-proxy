@@ -184,7 +184,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
               }
               if (i === trackData.buffers.length) {
                 log(sessionId, trackData.curBuffer, sequenceNumber, pcmData.length, Date.now(),"WARNING: All buffers full")
-                trackData.buffersFull = Date.now()
+                //trackData.buffersFull = Date.now()
               }
             }
 
