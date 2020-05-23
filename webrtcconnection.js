@@ -91,60 +91,53 @@ export default function EstablishPeerConnection(signalingSocket, log, beforeOffe
   signalingSocket.on("message", msg => {
     const json = JSON.parse(msg)
 
-    switch (json.type) {
-
-      case "answer":
-        log("answer received")
-        if (json.answer.type !== "answer") {
-          log("ERROR: Wrong type for answer:", json.answer.type)
-          break
-        }
+    if (json.answer) {
+      log("answer received")
+      if (json.answer.type !== "answer") {
+        log("ERROR: Wrong type for answer:", json.answer.type)
+      } else {
         peerConnection.setRemoteDescription(json.answer)
-        break
+      }
+    }
 
-      case "offer":
-        log("offer received")
-        if (json.offer.type !== "offer") {
-          log("ERROR: Wrong type for offer:", json.offer.type)
-          break
-        }
-        if (peerConnection.signalingState != "stable") {    //If we've already sent out an offer, ignore this one.  Client will do rollback.
-          return
-        }
-        peerConnection.setRemoteDescription(json.offer)
-          .then(() => peerConnection.createAnswer())
-          .then(answer => {
-            peerConnection.setLocalDescription(answer)
-              .then(() => {
-                signalingSocket.sendJson({type: "answer", answer: answer})  //Should be able to send localDescription except for Firefox bug
-              })
-          })
-        break;
-
-      case "ice":
-        //log("adding iceCandidate")
-        if (json.ice.candidate) {
-          peerConnection.addIceCandidate(json.ice)
-            .catch(err => {
-              log("Error setting ICE candidate:", err)
+    if (json.offer) {
+      log("offer received")
+      if (json.offer.type !== "offer") {
+        log("ERROR: Wrong type for offer:", json.offer.type)
+      } else {
+        if (peerConnection.signalingState === "stable") {    //If we've already sent out an offer, ignore this one.  Client will do rollback.
+          peerConnection.setRemoteDescription(json.offer)
+            .then(() => peerConnection.createAnswer())
+            .then(answer => {
+              peerConnection.setLocalDescription(answer)
+                .then(() => {
+                  signalingSocket.sendJson({type: "answer", answer: answer})  //Should be able to send localDescription except for Firefox bug
+                })
             })
         }
-        break
+      }
+    }
 
-      case "ready":
-        log("client ready")
-        if (peerConnection.onClientReady) {
-          peerConnection.onClientReady()
-        }
-        break
+    if (json.ice) {
+      //log("adding iceCandidate")
+      if (json.ice.candidate) {
+        peerConnection.addIceCandidate(json.ice)
+          .catch(err => {
+            log("Error setting ICE candidate:", err)
+          })
+      }
+    }
 
-      case "close":
-        log("closing peerConnection")
-        close()
-        break
+    if (json.ready || (json.type === "ready")) {
+      log("client ready")
+      if (peerConnection.onClientReady) {
+        peerConnection.onClientReady()
+      }
+    }
 
-      default:
-        log("Unhandled signaling message type:", json.type)
+    if (json.close || (json.type === "close")) {
+      log("closing peerConnection")
+      close()
     }
   })
 

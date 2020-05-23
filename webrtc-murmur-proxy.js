@@ -284,7 +284,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
               }
             })
     
-            webSocket.sendJson({type: "start"})
+            webSocket.sendJson({type: "start", start: true})
           }))
         }
       }
