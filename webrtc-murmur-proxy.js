@@ -42,6 +42,8 @@ process.on('warning', (warning) => {
   console.warn(warning.stack);
 });
 
+var openConnections = 0
+
 const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs.readFileSync("key.pem")}, (req, res) => {    //Running on Murmur server
 
   //We don"t expect to get HTTP requests, only WebSocket requests
@@ -60,6 +62,8 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
     let audioSink = null
     let tracks = {}
 
+    openConnections++
+
     webSocket.sendJson = obj => webSocket.send(JSON.stringify(obj))
 
     const id = generateId()
@@ -68,7 +72,12 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
         console.log(`[${id}]`, msg, ...args)
       }
     }
-    
+
+    webSocket.on("close", () => {
+      openConnections--
+      log("WebSocket closed.  Open connections:", openConnections)
+    })
+
     EstablishPeerConnection(webSocket, log,
       sessionId => {
         log("lost track for sessionId", sessionId)
