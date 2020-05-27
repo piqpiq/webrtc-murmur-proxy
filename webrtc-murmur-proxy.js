@@ -69,7 +69,12 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
       }
     }
     
-    EstablishPeerConnection(webSocket, log, peerConnection => {
+    EstablishPeerConnection(webSocket, log,
+      sessionId => {
+        log("lost track for sessionId", sessionId)
+        tracks[sessionId] = null
+      },      
+      peerConnection => {
 
       peerConnection.ontrack = evt => {
         log("got track")

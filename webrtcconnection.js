@@ -5,7 +5,7 @@ const RTCPeerConnection = require('wrtc').RTCPeerConnection;
 const TIME_TO_CONNECTED = 20000;
 const TIME_TO_RECONNECTED = 20000;
 
-export default function EstablishPeerConnection(signalingSocket, log, beforeOffer) {
+export default function EstablishPeerConnection(signalingSocket, log, lostTrackCallback, beforeOffer) {
   let timeoutTimer
 
   const close = () => {
@@ -135,6 +135,10 @@ export default function EstablishPeerConnection(signalingSocket, log, beforeOffe
       }
     }
 
+    if (json.lostTrack) {
+      lostTrackCallback(json.lostTrack)
+    }
+    
     if (json.close || (json.type === "close")) {
       log("closing peerConnection")
       close()
