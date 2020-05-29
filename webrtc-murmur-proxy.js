@@ -11,7 +11,7 @@ import EstablishPeerConnection from "./webrtcconnection"
 import PacketDataStream from "./PacketDataStream"
 const { RTCAudioSink, RTCAudioSource } = require("wrtc").nonstandard
 
-const murmurHost = "default.mumble.prod.hearo.live"
+const murmurHost = "127.0.0.1"
 const murmurPort = 64738
 const webRtcPort = 8136
 
