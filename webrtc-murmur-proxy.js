@@ -172,7 +172,8 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                   type: "user",
                   sessionId: sessionId,
                   trackNum: trackCount,
-                  trackId: track.id
+                  trackId: track.id,
+                  userId: id
                 })
                 peerConnection.addTrack(track)
                 //Murmur seems to send up to four packets at once, so we need at least five buffers
