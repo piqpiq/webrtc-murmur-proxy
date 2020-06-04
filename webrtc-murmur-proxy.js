@@ -63,6 +63,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
     let tracks = {}
 
     openConnections++
+    log("WebSocket opened.  Open connections:", openConnections)
 
     webSocket.sendJson = obj => webSocket.send(JSON.stringify(obj))
 
@@ -72,6 +73,8 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
         console.log(`[${id}]`, msg, ...args)
       }
     }
+
+    webSocket.sendJson({userId: id})
 
     webSocket.on("close", () => {
       openConnections--
@@ -172,8 +175,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                   type: "user",
                   sessionId: sessionId,
                   trackNum: trackCount,
-                  trackId: track.id,
-                  userId: id
+                  trackId: track.id
                 })
                 peerConnection.addTrack(track)
                 //Murmur seems to send up to four packets at once, so we need at least five buffers
