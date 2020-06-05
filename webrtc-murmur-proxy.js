@@ -62,9 +62,6 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
     let audioSink = null
     let tracks = {}
 
-    openConnections++
-    log("WebSocket opened.  Open connections:", openConnections)
-
     webSocket.sendJson = obj => webSocket.send(JSON.stringify(obj))
 
     const id = generateId()
@@ -73,6 +70,9 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
         console.log(`[${id}]`, msg, ...args)
       }
     }
+
+    openConnections++
+    log("WebSocket opened.  Open connections:", openConnections)
 
     webSocket.sendJson({userId: id})
 
