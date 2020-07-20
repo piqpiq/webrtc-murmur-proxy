@@ -10,7 +10,6 @@
   "dependencies": {
     "@discordjs/opus": "^0.1.0",
     "body": "^5.1.0",
-    "esm": "^3.2.25",
     "wrtc": "^0.4.4",
     "ws": "^7.2.3"
   },

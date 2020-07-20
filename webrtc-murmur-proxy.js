@@ -1,17 +1,18 @@
 "use strict"
 
-import WebSocket from "ws"
-import tls from "tls"
-import net from "net"
-import https from "https"
-import fs from "fs"
-import opus from "@discordjs/opus"
-import HighResolutionTimer from "./HighResTimer"
-import EstablishPeerConnection from "./webrtcconnection"
-import PacketDataStream from "./PacketDataStream"
+const WebSocket = require("ws")
+const tls = require("tls")
+const net = require("net")
+const https = require("https")
+const fs = require("fs")
+const opus = require("@discordjs/opus")
+const HighResolutionTimer = require("./HighResTimer").HighResolutionTimer
+const EstablishPeerConnection = require("./webrtcconnection").EstablishPeerConnection
+const PacketDataStream = require("./PacketDataStream").PacketDataStream
 const { RTCAudioSink, RTCAudioSource } = require("wrtc").nonstandard
 
-const murmurHost = "127.0.0.1"
+//const murmurHost = "default.mumble.prod.hearo.live"   //Use this for testing on dev machine
+const murmurHost = "127.0.0.1"          //Use this when running on the real Murmur server
 const murmurPort = 64738
 const webRtcPort = 8136
 

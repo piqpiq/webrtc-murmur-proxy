@@ -45,4 +45,4 @@ var HighResolutionTimer = (function() {
 
 }())
 
-export default HighResolutionTimer
+module.exports.HighResolutionTimer = HighResolutionTimer

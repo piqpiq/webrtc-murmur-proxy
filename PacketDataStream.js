@@ -1,6 +1,6 @@
 "use strict"
 
-export default class PacketDataStream {
+class PacketDataStream {
 
   constructor(bufferOrLength, offset) {
     if (typeof bufferOrLength === "number") {
@@ -140,3 +140,5 @@ export default class PacketDataStream {
     this.offset += source.byteLength
   }
 }
+
+module.exports.PacketDataStream = PacketDataStream

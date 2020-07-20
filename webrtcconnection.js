@@ -5,7 +5,7 @@ const RTCPeerConnection = require('wrtc').RTCPeerConnection;
 const TIME_TO_CONNECTED = 20000;
 const TIME_TO_RECONNECTED = 20000;
 
-export default function EstablishPeerConnection(signalingSocket, log, lostTrackCallback, beforeOffer) {
+function EstablishPeerConnection(signalingSocket, log, lostTrackCallback, beforeOffer) {
   let timeoutTimer
 
   const close = () => {
@@ -147,3 +147,5 @@ export default function EstablishPeerConnection(signalingSocket, log, lostTrackC
 
   return peerConnection;
 }
+
+module.exports.EstablishPeerConnection = EstablishPeerConnection
