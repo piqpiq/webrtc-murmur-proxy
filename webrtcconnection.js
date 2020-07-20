@@ -64,7 +64,6 @@ function EstablishPeerConnection(signalingSocket, log, lostTrackCallback, before
         } 
         peerConnection.setLocalDescription(offer)
           .then(() => signalingSocket.sendJson({
-            type: "offer",
             offer: peerConnection.localDescription
           }))
       })
@@ -74,7 +73,6 @@ function EstablishPeerConnection(signalingSocket, log, lostTrackCallback, before
     if (evt.candidate && evt.candidate.candidate) {
       //log("on icecandidate")
       signalingSocket.sendJson({
-        type: "ice",
         ice: {
           candidate: evt.candidate.candidate,
           sdpMid: evt.candidate.sdpMid,
@@ -111,7 +109,7 @@ function EstablishPeerConnection(signalingSocket, log, lostTrackCallback, before
             .then(answer => {
               peerConnection.setLocalDescription(answer)
                 .then(() => {
-                  signalingSocket.sendJson({type: "answer", answer: answer})  //Should be able to send localDescription except for Firefox bug
+                  signalingSocket.sendJson({answer: answer})  //Should be able to send localDescription except for Firefox bug
                 })
             })
         }
