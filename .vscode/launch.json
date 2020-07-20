@@ -12,7 +12,7 @@
         "<node_internals>/**"
       ],
       "program": "${workspaceFolder}\\webrtc-murmur-proxy.js",
-      "runtimeArgs": [],
+      "runtimeArgs": ["--tls-min-v1.0"],
       "args": ["log"]
     }
   ]
