@@ -176,7 +176,18 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                     sessionId: sessionId,
                     trackNum: trackCount
                   })
-                  peerConnection.addTrack(track)
+                  const sender = peerConnection.addTrack(track)
+                  //Look for out-of-order transceiver mid values
+                  const transceiver = transceivers.find(t => t.sender === sender)
+                  if (!transceiver) {
+                    log("Couldn't find transceiver. trackCount = ", trackCount)
+                  } else {
+                    setTimeout(() => {
+                      if (transceiver.mid !== trackCount) {
+                        log("Mismatched mid: mid = ", transceiver.mid, " trackCount = ", trackCount, " sessionId = ", sessionId)
+                      }
+                    }, 200)
+                  }
                   //Murmur seems to send up to four packets at once, so we need at least five buffers
                   tracks[sessionId] = trackData = {buffers: [null, null, null, null, null], curBuffer: 0, bufferPos: 0}
                   trackData.intervalTimer = new HighResolutionTimer({
