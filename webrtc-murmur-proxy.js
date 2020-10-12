@@ -11,8 +11,8 @@ const EstablishPeerConnection = require("./webrtcconnection").EstablishPeerConne
 const PacketDataStream = require("./PacketDataStream").PacketDataStream
 const { RTCAudioSink, RTCAudioSource } = require("wrtc").nonstandard
 
-const murmurHost = "default.mumble.prod.hearo.live"   //Use this for testing on dev machine
-//const murmurHost = "127.0.0.1"          //Use this when running on the real Murmur server
+//const murmurHost = "default.mumble.prod.hearo.live"   //Use this for testing on dev machine
+const murmurHost = "127.0.0.1"          //Use this when running on the real Murmur server
 const murmurPort = 64738
 const webRtcPort = 8136
 
@@ -86,7 +86,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
       sessionId => {
         log("lost track for sessionId", sessionId)
         tracks[sessionId] = null
-      },      
+      },
       peerConnection => {
 
         peerConnection.ontrack = evt => {
@@ -177,17 +177,25 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                     trackNum: trackCount
                   })
                   const sender = peerConnection.addTrack(track)
-                  //Look for out-of-order transceiver mid values
                   const transceiver = peerConnection.getTransceivers().find(t => t.sender === sender)
-                  if (!transceiver) {
-                    log("Couldn't find transceiver. trackCount = ", trackCount)
-                  } else {
-                    setTimeout(() => {
-                      if (transceiver.mid !== trackCount) {
-                        log("Mismatched mid: mid = ", transceiver.mid, " trackCount = ", trackCount, " sessionId = ", sessionId)
+                  let retryCount = 0
+                  //Wait for transceiver.mid to be set, and then send it to the client
+                  const interval = setInterval(() => {
+                    if (transceiver.mid) {
+                      clearInterval(interval)
+                      log(`mid = ${transceiver.mid} sessionId = ${sessionId}`)
+                      webSocket.sendJson({    //Tell the client which user this track goes with
+                        _sessionId: sessionId,
+                        mid: transceiver.mid
+                      })
+                    } else {
+                      retryCount++
+                      if (retryCount > 5) {
+                        log("Retry count is ", retryCount, " sessionsId =", sessionId)
+                        clearInterval(interval)
                       }
-                    }, 200)
-                  }
+                    }
+                  }, 100)
                   //Murmur seems to send up to four packets at once, so we need at least five buffers
                   tracks[sessionId] = trackData = {buffers: [null, null, null, null, null], curBuffer: 0, bufferPos: 0}
                   trackData.intervalTimer = new HighResolutionTimer({
