@@ -190,7 +190,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                       })
                     } else {
                       retryCount++
-                      if (retryCount > 5) {
+                      if (retryCount > 50) {
                         log("Retry count is ", retryCount, " sessionsId =", sessionId)
                         clearInterval(interval)
                       }
