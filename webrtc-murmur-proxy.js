@@ -381,7 +381,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
       
         //For encoding and sending audio data
         const opusEncoder = new opus.OpusEncoder(48000, 1)
-        let rawDataBuffer = new Uint16Array(480 * 5)
+        let rawDataBuffer = new Uint16Array(480 * 7)    //Make one frame larger in case weird frame lengths cause it to run over
         let rawDataBufferOffset = 0
         peerConnection.packetCount = 0
         let lastSampleCount
@@ -407,12 +407,12 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
           new Uint16Array(rawDataBuffer.buffer, rawDataBufferOffset * 2, data.samples.length).set(data.samples)
           rawDataBufferOffset += data.samples.length
       
-          if (rawDataBufferOffset > 480) {
+          if (rawDataBufferOffset > 2880) {
             log("discarding (too big)", rawDataBufferOffset)
             rawDataBufferOffset = 0
           }
       
-          if (rawDataBufferOffset === 480) {
+          if (rawDataBufferOffset === 2880) {
       
             //Convert raw samples to Opus
             const encodedSamples = opusEncoder.encode(new Uint16Array(rawDataBuffer.buffer, 0, rawDataBufferOffset));
