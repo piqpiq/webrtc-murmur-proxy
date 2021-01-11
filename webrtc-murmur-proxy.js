@@ -11,8 +11,8 @@ const EstablishPeerConnection = require("./webrtcconnection").EstablishPeerConne
 const PacketDataStream = require("./PacketDataStream").PacketDataStream
 const { RTCAudioSink, RTCAudioSource } = require("wrtc").nonstandard
 
-//const murmurHost = "default.mumble.prod.hearo.live"   //Use this for testing on dev machine
-const murmurHost = "127.0.0.1"          //Use this when running on the real Murmur server
+const murmurHost = "default.mumble.prod.hearo.live"   //Use this for testing on dev machine
+//const murmurHost = "127.0.0.1"          //Use this when running on the real Murmur server
 const murmurPort = 64738
 const webRtcPort = 8136
 
@@ -395,6 +395,15 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
             throw new Error("Too many samples in packet: " + data.samples.length)
           }
       
+          //If packet is silent, don't send it up to the Murmur server
+          let sum = 1.0
+          for (let i = 0; i < data.samples.length; i++) {
+            sum += data.samples[i] * data.samples[i];
+          }
+          if (sum / data.samples.length < 100) {
+            return
+          }
+
           if (data.samples.length !== lastSampleCount) {      //Make sure we can get to 480 even
             const oldOffset = rawDataBufferOffset
             if (rawDataBufferOffset) {
