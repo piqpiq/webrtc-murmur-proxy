@@ -82,6 +82,11 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
       log("WebSocket closed.  Open connections:", openConnections)
     })
 
+    webSocket.on("error", () => {
+      openConnections--
+      log("WebSocket error.  Open connections:", openConnections)
+    })
+
     EstablishPeerConnection(webSocket, log,
       sessionId => {
         log("lost track for sessionId", sessionId)

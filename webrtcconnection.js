@@ -87,7 +87,15 @@ function EstablishPeerConnection(signalingSocket, log, lostTrackCallback, before
   doSetTimeout(TIME_TO_CONNECTED)
 
   signalingSocket.on("message", msg => {
-    const json = JSON.parse(msg)
+    let json
+
+    try {
+      json = JSON.parse(msg)
+    }
+    catch (err) {
+      log("JSON parsing error: " + msg.toString())
+      return
+    }
 
     if (json.answer) {
       log("answer received")
