@@ -178,8 +178,7 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
                   const track = source.createTrack()
                   trackCount++
                   webSocket.sendJson({    //Tell the client which user this track goes with
-                    sessionId: sessionId,
-                    trackNum: trackCount
+                    sessionId: sessionId
                   })
                   const sender = peerConnection.addTrack(track)
                   const transceiver = peerConnection.getTransceivers().find(t => t.sender === sender)
