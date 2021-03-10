@@ -105,12 +105,12 @@ const webServer = https.createServer({cert: fs.readFileSync("cert.pem"), key: fs
           maybeOpenMurmur()
         }
 
-        // peerConnection.onClose = () => {
-        //   if (murmurSocket) {
-        //     log("destroying murmurSocket")
-        //     murmurSocket.destroy()
-        //   }
-        // }
+        peerConnection.onClose = () => {
+          if (murmurSocket) {
+            log("destroying murmurSocket")
+            murmurSocket.destroy()
+          }
+        }
         
         const maybeOpenMurmur = () => {
           if (clientReady && dataChannel && (dataChannel.readyState === "open") && !murmurSocket) {

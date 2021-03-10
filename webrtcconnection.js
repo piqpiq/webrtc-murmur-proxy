@@ -12,9 +12,9 @@ function EstablishPeerConnection(signalingSocket, log, lostTrackCallback, before
     if (timeoutTimer) {
       clearTimeout(timeoutTimer)
     }
-    // if (peerConnection.onClose) {
-    //   peerConnection.onClose()
-    // }
+    if (peerConnection.onClose) {
+      peerConnection.onClose()
+    }
     peerConnection.close()
   }
 
